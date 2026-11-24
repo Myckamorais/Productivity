@@ -1,0 +1,125 @@
+# Variáveis de ambiente locais: senha do banco, segredo do JWT, token do Telegram
+.env
+.env.*
+!.env.example
+*.env
+
+# Configurações locais com credenciais (versione só os modelos *.example)
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secret*.yml
+application-secret*.properties
+secrets/
+**/secrets/
+
+# Chaves, certificados e keystores
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+id_rsa*
+id_ed25519*
+
+# Credenciais de nuvem/deploy
+.aws/
+gcloud/
+*.credentials
+credentials.json
+service-account*.json
+
+# ---------- BUILD / MAVEN ----------
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# ---------- JAVA ----------
+*.class
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+
+# ---------- IDEs ----------
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Eclipse / Spring Tool Suite
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# VS Code (mantém só configurações úteis para o time)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# ---------- LOGS E DADOS LOCAIS ----------
+logs/
+*.log.*
+*.tmp
+*.bak
+*.swp
+*~
+
+# Dados do PostgreSQL do docker-compose (volume local)
+postgres-data/
+pgdata/
+docker/data/
+
+# Arquivos de áudio recebidos do bot do Telegram em testes locais
+uploads/
+tmp/
+
+# ---------- SISTEMA OPERACIONAL ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ---------- FERRAMENTAS ----------
+# Relatórios de cobertura gerados localmente
+jacoco.exec
+coverage/
+
+# Arquivos do Claude Code (instruções e configurações locais, fora do repositório)
+CLAUDE.md
+.claude/
