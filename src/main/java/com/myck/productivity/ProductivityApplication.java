@@ -1,4 +1,4 @@
-package com.projects.productivity;
+package com.myck.productivity;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
