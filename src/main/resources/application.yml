@@ -22,6 +22,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+app:
+  jwt:
+    # Segredo só por variável de ambiente (sem valor padrão, para a app não subir com segredo fraco por esquecimento)
+    secret: ${JWT_SECRET}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+
 management:
   endpoints:
     web:
