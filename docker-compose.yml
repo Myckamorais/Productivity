@@ -1,0 +1,22 @@
+# PostgreSQL para desenvolvimento local. Credenciais vêm do .env (copie de .env.example).
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: productivity-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-productivity}
+      POSTGRES_USER: ${DB_USER:-productivity}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no arquivo .env}
+    ports:
+      # Porta 5433 no host para não colidir com um PostgreSQL instalado na máquina (5432)
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-productivity} -d ${DB_NAME:-productivity}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

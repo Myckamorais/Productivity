@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: productivity
+  config:
+    # Lê o .env da raiz (ignorado pelo Git) como propriedades, para rodar localmente sem exportar variáveis na mão.
+    # É opcional: em produção as variáveis vêm direto do ambiente da hospedagem.
+    import: optional:file:.env[.properties]
+  profiles:
+    default: dev
+  datasource:
+    # Nenhum segredo fica aqui: senha, usuário e URL vêm de variáveis de ambiente (regra 7 do plano)
+    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5433}/${DB_NAME:productivity}}
+    username: ${DB_USER:productivity}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # O schema é responsabilidade do Flyway; o Hibernate só confere se as entidades batem com ele
+      ddl-auto: validate
+    # Evita consultas lazy disparadas na camada web, fora da transação do service
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Só o health fica exposto; os demais endpoints do Actuator ficam fechados
+        include: health
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    show-sql: true
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    show-sql: false
+
+management:
+  endpoint:
+    health:
+      # Em produção o health responde só UP/DOWN, sem expor detalhes da infraestrutura
+      show-details: never
