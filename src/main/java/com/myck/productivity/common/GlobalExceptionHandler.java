@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -38,6 +40,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException ex, HttpServletRequest request) {
         return build(ex.getStatus(), ex.getMessage(), request.getRequestURI(), null);
+    }
+
+    /** Sem token, ou token inválido/expirado, em rota protegida: 401 (chamado pelo SecurityErrorHandler). */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthenticated(AuthenticationException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.UNAUTHORIZED, "Autenticação necessária: envie um token válido.",
+                request.getRequestURI(), null);
+    }
+
+    /** Usuário autenticado sem permissão para o recurso: 403. */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        return build(HttpStatus.FORBIDDEN, "Acesso negado.", request.getRequestURI(), null);
     }
 
     /**
