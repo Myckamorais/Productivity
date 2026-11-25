@@ -2,35 +2,25 @@ package com.myck.productivity;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Integração da Fase 0: aplicação inteira contra um PostgreSQL real em container (Testcontainers). */
-@Import(TestcontainersConfiguration.class)
-@SpringBootTest
-@AutoConfigureMockMvc
-class ProductivityApplicationIT {
-
-    @Autowired
-    private MockMvc mockMvc;
+/** Integração da fundação: contexto sobe com PostgreSQL real, migrations aplicadas, health e Swagger abertos. */
+class ProductivityApplicationIT extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void deveSubirOContextoEAplicarAMigrationBase() {
-        // Then: o Flyway rodou a V1 e registrou no histórico
+    void deveSubirOContextoEAplicarTodasAsMigrations() {
+        // Then: o Flyway aplicou V1 (base) e V2 (users) sem falhas
         Integer aplicadas = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success = true", Integer.class);
-        assertThat(aplicadas).isGreaterThanOrEqualTo(1);
+        assertThat(aplicadas).isGreaterThanOrEqualTo(2);
     }
 
     @Test
