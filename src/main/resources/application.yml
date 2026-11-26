@@ -27,6 +27,19 @@ app:
     # Segredo só por variável de ambiente (sem valor padrão, para a app não subir com segredo fraco por esquecimento)
     secret: ${JWT_SECRET}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  telegram:
+    # Sem token o bot fica desligado (testes, front em desenvolvimento) e o resto da API funciona normalmente
+    token: ${TELEGRAM_BOT_TOKEN:}
+    bot-username: ${TELEGRAM_BOT_USERNAME:tarefanoar_bot}
+    # webhook: o Telegram chama a API (produção). polling: a API busca as mensagens (dev, sem URL pública)
+    mode: ${TELEGRAM_MODE:webhook}
+    # URL pública do webhook; se informada, é registrada no Telegram ao subir a aplicação
+    webhook-url: ${TELEGRAM_WEBHOOK_URL:}
+    # Segredo que o Telegram devolve no header de cada chamada do webhook; sem ele, o webhook recusa tudo
+    webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+    api-url: https://api.telegram.org
+    # De quanto em quanto tempo procurar timers que acabaram para avisar no Telegram
+    expiry-check-interval: PT1M
 
 management:
   endpoints:
@@ -46,6 +59,11 @@ spring:
       on-profile: dev
   jpa:
     show-sql: true
+
+app:
+  telegram:
+    # No computador não há URL pública para o webhook: a API busca as mensagens do bot
+    mode: ${TELEGRAM_MODE:polling}
 
 management:
   endpoint:
