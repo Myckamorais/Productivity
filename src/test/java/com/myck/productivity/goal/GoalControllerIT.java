@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,7 +33,7 @@ class GoalControllerIT extends AbstractIntegrationTest {
                 {"title": "%s"}""".formatted(titulo);
     }
 
-    /** Cria uma meta pela API e devolve o id. */
+    /** Cria uma meta pela API com o corpo informado e devolve o id. */
     private long criar(String auth, String corpo) throws Exception {
         String resposta = mockMvc.perform(post("/goals")
                         .header(HttpHeaders.AUTHORIZATION, auth)
@@ -126,6 +127,99 @@ class GoalControllerIT extends AbstractIntegrationTest {
                         .content(corpo("Meta renomeada")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    // ---------- progresso (tarefas concluídas / total) ----------
+
+    private void concluir(String auth, long tarefa) throws Exception {
+        mockMvc.perform(patch("/tasks/{id}/complete", tarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deveMostrarProgressoZeroQuandoAMetaNaoTemTarefas() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long meta = criar(auth, corpo("Sem tarefas"));
+
+        mockMvc.perform(get("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.totalTasks").value(0))
+                .andExpect(jsonPath("$.completedTasks").value(0))
+                .andExpect(jsonPath("$.progressPercent").value(0));
+    }
+
+    @Test
+    void deveAtualizarOProgressoAConformeAsTarefasSaoConcluidas() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long categoria = criarCategoria(auth, "Estudos");
+        long meta = criar(auth, corpo("Aprender Java"));
+        long t1 = criarTarefa(auth, "T1", categoria, meta, null);
+        long t2 = criarTarefa(auth, "T2", categoria, meta, null);
+        long t3 = criarTarefa(auth, "T3", categoria, meta, null);
+
+        // Nenhuma concluída: 0 de 3
+        mockMvc.perform(get("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.totalTasks").value(3))
+                .andExpect(jsonPath("$.completedTasks").value(0))
+                .andExpect(jsonPath("$.progressPercent").value(0));
+
+        // 1 de 3 = 33%
+        concluir(auth, t1);
+        mockMvc.perform(get("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.completedTasks").value(1))
+                .andExpect(jsonPath("$.progressPercent").value(33));
+
+        // 2 de 3 = 67%
+        concluir(auth, t2);
+        mockMvc.perform(get("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.progressPercent").value(67));
+
+        // 3 de 3 = 100%
+        concluir(auth, t3);
+        mockMvc.perform(get("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.progressPercent").value(100));
+    }
+
+    @Test
+    void deveContarSoAsTarefasDeCadaMetaNaListagem() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long categoria = criarCategoria(auth, "Estudos");
+        long metaA = criar(auth, corpo("Meta A"));
+        long metaB = criar(auth, corpo("Meta B"));
+        long metaVazia = criar(auth, corpo("Meta vazia"));
+        long a1 = criarTarefa(auth, "A1", categoria, metaA, null);
+        criarTarefa(auth, "A2", categoria, metaA, null);
+        long b1 = criarTarefa(auth, "B1", categoria, metaB, null);
+        criarTarefa(auth, "Solta", categoria, null, null);
+        concluir(auth, a1);
+        concluir(auth, b1);
+
+        // A listagem vem das mais recentes: vazia, B, A
+        mockMvc.perform(get("/goals").header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$[0].id").value(metaVazia))
+                .andExpect(jsonPath("$[0].progressPercent").value(0))
+                .andExpect(jsonPath("$[1].id").value(metaB))
+                .andExpect(jsonPath("$[1].totalTasks").value(1))
+                .andExpect(jsonPath("$[1].progressPercent").value(100))
+                .andExpect(jsonPath("$[2].id").value(metaA))
+                .andExpect(jsonPath("$[2].totalTasks").value(2))
+                .andExpect(jsonPath("$[2].progressPercent").value(50));
+    }
+
+    @Test
+    void deveDesvincularAsTarefasEMantelasQuandoAMetaEApagada() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long categoria = criarCategoria(auth, "Estudos");
+        long meta = criar(auth, corpo("Aprender Java"));
+        long tarefa = criarTarefa(auth, "Estudar", categoria, meta, null);
+
+        mockMvc.perform(delete("/goals/{id}", meta).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isNoContent());
+
+        // A tarefa continua existindo, só sem meta
+        mockMvc.perform(get("/tasks/{id}", tarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Estudar"))
+                .andExpect(jsonPath("$.goalId").doesNotExist());
     }
 
     // ---------- validações ----------

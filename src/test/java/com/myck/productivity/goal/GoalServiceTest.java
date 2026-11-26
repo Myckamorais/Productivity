@@ -8,6 +8,8 @@ import com.myck.productivity.goal.entity.GoalStatus;
 import com.myck.productivity.goal.mapper.GoalMapper;
 import com.myck.productivity.goal.repository.GoalRepository;
 import com.myck.productivity.goal.service.GoalService;
+import com.myck.productivity.task.repository.GoalTaskCount;
+import com.myck.productivity.task.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,7 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,12 +38,85 @@ class GoalServiceTest {
 
     @Mock
     private GoalRepository goalRepository;
+    @Mock
+    private TaskRepository taskRepository;
 
     private GoalService goalService;
 
     @BeforeEach
     void setUp() {
-        goalService = new GoalService(goalRepository, new GoalMapper());
+        goalService = new GoalService(goalRepository, taskRepository, new GoalMapper());
+    }
+
+    // ---------- progresso ----------
+
+    @Test
+    void deveCriarMetaComProgressoZeroSemConsultarTarefas() {
+        // Given
+        when(goalRepository.save(any(Goal.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // When
+        GoalResponse resposta = goalService.create(USER, new GoalRequest("Meta", null, null, null));
+
+        // Then
+        assertThat(resposta.totalTasks()).isZero();
+        assertThat(resposta.progressPercent()).isZero();
+        verifyNoInteractions(taskRepository);
+    }
+
+    @Test
+    void deveCalcularOProgressoDaMetaComAsTarefasConcluidas() {
+        // Given: 3 tarefas, 1 concluída
+        when(goalRepository.findByIdAndUserId(5L, USER)).thenReturn(Optional.of(GoalFactory.aprenderJava(5L, USER)));
+        when(taskRepository.countByGoals(USER, List.of(5L))).thenReturn(List.of(new GoalTaskCount(5L, 3L, 1L)));
+
+        // When
+        GoalResponse resposta = goalService.get(USER, 5L);
+
+        // Then
+        assertThat(resposta.totalTasks()).isEqualTo(3);
+        assertThat(resposta.completedTasks()).isEqualTo(1);
+        assertThat(resposta.progressPercent()).isEqualTo(33);
+    }
+
+    @Test
+    void deveCalcularOProgressoDeTodasAsMetasDaListagemEmUmaUnicaConsulta() {
+        // Given: duas metas; só a 5 tem tarefas
+        when(goalRepository.findAllByUserIdOrderByCreatedAtDesc(USER))
+                .thenReturn(List.of(GoalFactory.aprenderJava(5L, USER), GoalFactory.aprenderJava(6L, USER)));
+        when(taskRepository.countByGoals(USER, List.of(5L, 6L))).thenReturn(List.of(new GoalTaskCount(5L, 2L, 2L)));
+
+        // When
+        List<GoalResponse> lista = goalService.list(USER);
+
+        // Then
+        assertThat(lista).extracting(GoalResponse::progressPercent).containsExactly(100, 0);
+        verify(taskRepository, times(1)).countByGoals(any(), any());
+    }
+
+    @Test
+    void naoDeveConsultarTarefasQuandoOUsuarioNaoTemMetas() {
+        // Given
+        when(goalRepository.findAllByUserIdOrderByCreatedAtDesc(USER)).thenReturn(List.of());
+
+        // When / Then
+        assertThat(goalService.list(USER)).isEmpty();
+        verifyNoInteractions(taskRepository);
+    }
+
+    @Test
+    void deveRetornarOProgressoAtualDepoisDeEditarAMeta() {
+        // Given
+        Goal meta = GoalFactory.aprenderJava(5L, USER);
+        when(goalRepository.findByIdAndUserId(5L, USER)).thenReturn(Optional.of(meta));
+        when(goalRepository.save(meta)).thenReturn(meta);
+        when(taskRepository.countByGoals(USER, List.of(5L))).thenReturn(List.of(new GoalTaskCount(5L, 4L, 3L)));
+
+        // When
+        GoalResponse resposta = goalService.update(USER, 5L, new GoalRequest("Novo título", null, null, null));
+
+        // Then
+        assertThat(resposta.progressPercent()).isEqualTo(75);
     }
 
     // ---------- create ----------

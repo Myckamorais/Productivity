@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -61,6 +62,37 @@ public abstract class AbstractIntegrationTest {
     protected String novoUsuario(String nome, String email) throws Exception {
         registrar(nome, email, "senha-segura-123");
         return "Bearer " + logar(email, "senha-segura-123");
+    }
+
+    /** Cria uma categoria pela API e devolve o id. */
+    protected long criarCategoria(String auth, String nome) throws Exception {
+        return criarRecurso(auth, "/categories", """
+                {"name": "%s", "color": "#3B82F6"}""".formatted(nome));
+    }
+
+    /** Cria uma meta pela API e devolve o id. */
+    protected long criarMeta(String auth, String titulo) throws Exception {
+        return criarRecurso(auth, "/goals", """
+                {"title": "%s"}""".formatted(titulo));
+    }
+
+    /** Cria uma tarefa pela API (meta e data são opcionais; data no formato AAAA-MM-DD) e devolve o id. */
+    protected long criarTarefa(String auth, String titulo, long categoriaId, Long metaId, String data)
+            throws Exception {
+        String meta = metaId == null ? "" : ", \"goalId\": " + metaId;
+        String dia = data == null ? "" : ", \"plannedDate\": \"" + data + "\"";
+        return criarRecurso(auth, "/tasks", """
+                {"title": "%s", "categoryId": %d%s%s}""".formatted(titulo, categoriaId, meta, dia));
+    }
+
+    private long criarRecurso(String auth, String url, String corpo) throws Exception {
+        String resposta = mockMvc.perform(post(url)
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(corpo))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return lerId(resposta);
     }
 
     /** Lê um campo numérico (como o id) do corpo JSON de uma resposta. */

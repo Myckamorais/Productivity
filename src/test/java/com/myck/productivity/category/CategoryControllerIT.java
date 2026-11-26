@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -82,6 +83,39 @@ class CategoryControllerIT extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/categories/{id}", id).header(HttpHeaders.AUTHORIZATION, auth))
                 .andExpect(status().isNotFound());
+    }
+
+    // ---------- exclusão de categoria com tarefas ----------
+
+    @Test
+    void deveRetornar409AoApagarCategoriaQueTemTarefasEPermitirDepoisDeApagarAsTarefas() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long categoria = criar(auth, "Estudos", "#3B82F6");
+        long tarefa = criarTarefa(auth, "Estudar", categoria, null, null);
+
+        // Com tarefa ligada, a exclusão é recusada e a categoria continua existindo
+        mockMvc.perform(delete("/categories/{id}", categoria).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("possui tarefas")));
+        mockMvc.perform(get("/categories/{id}", categoria).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isOk());
+
+        // Sem a tarefa, a exclusão passa
+        mockMvc.perform(delete("/tasks/{id}", tarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/categories/{id}", categoria).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void devePermitirApagarCategoriaSemTarefasMesmoQueOutraCategoriaTenha() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long comTarefa = criar(auth, "Estudos", "#3B82F6");
+        long semTarefa = criar(auth, "Trabalho", "#EF4444");
+        criarTarefa(auth, "Estudar", comTarefa, null, null);
+
+        mockMvc.perform(delete("/categories/{id}", semTarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isNoContent());
     }
 
     // ---------- validações e regras ----------

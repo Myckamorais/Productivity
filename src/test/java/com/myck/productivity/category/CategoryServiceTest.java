@@ -8,6 +8,7 @@ import com.myck.productivity.category.repository.CategoryRepository;
 import com.myck.productivity.category.service.CategoryService;
 import com.myck.productivity.common.BusinessException;
 import com.myck.productivity.common.ResourceNotFoundException;
+import com.myck.productivity.task.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,12 +37,14 @@ class CategoryServiceTest {
 
     @Mock
     private CategoryRepository categoryRepository;
+    @Mock
+    private TaskRepository taskRepository;
 
     private CategoryService categoryService;
 
     @BeforeEach
     void setUp() {
-        categoryService = new CategoryService(categoryRepository, new CategoryMapper());
+        categoryService = new CategoryService(categoryRepository, taskRepository, new CategoryMapper());
     }
 
     // ---------- create ----------
@@ -178,6 +182,36 @@ class CategoryServiceTest {
 
         // Then
         verify(categoryRepository).delete(categoria);
+    }
+
+    @Test
+    void naoDeveRemoverCategoriaQueTemTarefas() {
+        // Given
+        when(categoryRepository.findByIdAndUserId(10L, USER))
+                .thenReturn(Optional.of(CategoryFactory.estudos(10L, USER)));
+        when(taskRepository.existsByCategoryId(10L)).thenReturn(true);
+
+        // When / Then
+        assertThatThrownBy(() -> categoryService.delete(USER, 10L))
+                .isInstanceOfSatisfying(BusinessException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(e.getMessage()).contains("possui tarefas");
+                });
+        verify(categoryRepository, never()).delete(any());
+    }
+
+    @Test
+    void deveRetornarConflitoQuandoOBancoRecusaApagarPorTarefaCriadaNoMeioTempo() {
+        // Given: a checagem não viu a tarefa, mas a FK do banco recusou o DELETE
+        Category categoria = CategoryFactory.estudos(10L, USER);
+        when(categoryRepository.findByIdAndUserId(10L, USER)).thenReturn(Optional.of(categoria));
+        when(taskRepository.existsByCategoryId(10L)).thenReturn(false);
+        doThrow(new DataIntegrityViolationException("fk")).when(categoryRepository).flush();
+
+        // When / Then
+        assertThatThrownBy(() -> categoryService.delete(USER, 10L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT));
     }
 
     @Test
