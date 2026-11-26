@@ -36,6 +36,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Cadastro e login: quem chama ainda não tem token
                         .requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login").permitAll()
+                        // Webhook do Telegram: quem chama é o Telegram, sem JWT; a rota confere o segredo no header
+                        .requestMatchers(HttpMethod.POST, "/telegram/webhook").permitAll()
                         // Health sem login, para a hospedagem e o Docker verificarem se a app está de pé
                         .requestMatchers("/actuator/health/**").permitAll()
                         // Documentação da API

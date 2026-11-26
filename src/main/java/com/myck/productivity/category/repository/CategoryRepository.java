@@ -15,6 +15,9 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     Optional<Category> findByIdAndUserId(Long id, Long userId);
 
+    // Busca pelo nome sem diferenciar maiúsculas (usada pelo bot para achar a categoria "Telegram")
+    Optional<Category> findByUserIdAndNameIgnoreCase(Long userId, String name);
+
     // Confirma que a categoria existe E é do usuário, sem carregá-la (usada ao vincular uma tarefa)
     boolean existsByIdAndUserId(Long id, Long userId);
 
