@@ -4,7 +4,6 @@ import com.myck.productivity.task.dto.TimerResponse;
 import com.myck.productivity.task.dto.TimerState;
 import com.myck.productivity.task.entity.Task;
 import com.myck.productivity.task.entity.TaskSession;
-import com.myck.productivity.task.entity.TaskStatus;
 import com.myck.productivity.task.entity.TimerBlocks;
 import org.springframework.stereotype.Component;
 
@@ -36,7 +35,7 @@ public class TimerMapper {
                         session.getPlannedMinutes(), session.getExpiresAt(), duration.getSeconds(), remaining);
             }
         }
-        TimerState state = stateOf(task, active);
+        TimerState state = TimerState.of(task.getStatus(), active != null);
         return new TimerResponse(task.getId(), task.getStatus(), state, total.getSeconds(),
                 remainingOf(state, sessions, now), active, items);
     }
@@ -47,16 +46,5 @@ public class TimerMapper {
             return null;
         }
         return TimerBlocks.remaining(sessions, now).map(Duration::getSeconds).orElse(null);
-    }
-
-    // Concluída vence; senão, sessão rodando = RUNNING; tarefa iniciada sem sessão rodando = PAUSED
-    private static TimerState stateOf(Task task, TimerResponse.ActiveSession active) {
-        if (task.getStatus() == TaskStatus.COMPLETED) {
-            return TimerState.COMPLETED;
-        }
-        if (active != null) {
-            return TimerState.RUNNING;
-        }
-        return task.getStatus() == TaskStatus.IN_PROGRESS ? TimerState.PAUSED : TimerState.IDLE;
     }
 }

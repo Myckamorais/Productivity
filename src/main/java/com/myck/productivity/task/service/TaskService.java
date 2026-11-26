@@ -15,6 +15,8 @@ import com.myck.productivity.task.mapper.TaskMapper;
 import com.myck.productivity.task.repository.TaskRepository;
 import com.myck.productivity.task.repository.TaskSessionRepository;
 import com.myck.productivity.task.repository.TaskSpecifications;
+import com.myck.productivity.task.repository.TaskTimeQueries;
+import com.myck.productivity.task.repository.TaskTimeSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Map;
 
 @Service
 public class TaskService {
@@ -40,16 +43,18 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskSessionRepository sessionRepository;
+    private final TaskTimeQueries timeQueries;
     private final CategoryRepository categoryRepository;
     private final GoalRepository goalRepository;
     private final TaskMapper taskMapper;
     private final Clock clock;
 
     public TaskService(TaskRepository taskRepository, TaskSessionRepository sessionRepository,
-            CategoryRepository categoryRepository, GoalRepository goalRepository, TaskMapper taskMapper,
-            Clock clock) {
+            TaskTimeQueries timeQueries, CategoryRepository categoryRepository, GoalRepository goalRepository,
+            TaskMapper taskMapper, Clock clock) {
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
+        this.timeQueries = timeQueries;
         this.categoryRepository = categoryRepository;
         this.goalRepository = goalRepository;
         this.taskMapper = taskMapper;
@@ -71,12 +76,14 @@ public class TaskService {
             task.changeStatus(request.status(), clock.instant());
         }
         taskRepository.save(task);
-        return taskMapper.toResponse(task);
+        // Tarefa recém-criada nunca tem sessões: o tempo é zero sem precisar consultar
+        return taskMapper.toResponse(task, TaskTimeSummary.NONE);
     }
 
     /**
      * Lista as tarefas do usuário com filtros opcionais e paginação. O intervalo de datas é inclusivo
-     * e usa a data planejada; página começa em 0 e o tamanho vai de 1 a 100.
+     * e usa a data planejada; página começa em 0 e o tamanho vai de 1 a 100. Cada tarefa vem com o tempo
+     * investido e o estado do cronômetro, calculados numa única consulta para a página inteira.
      */
     @Transactional(readOnly = true)
     public PageResponse<TaskResponse> list(Long userId, TaskStatus status, Long categoryId, Long goalId,
@@ -94,13 +101,17 @@ public class TaskService {
         Pageable pageable = PageRequest.of(page, size, DEFAULT_SORT);
         Page<Task> result = taskRepository.findAll(
                 TaskSpecifications.filter(userId, status, categoryId, goalId, from, to), pageable);
-        return PageResponse.from(result.map(taskMapper::toResponse));
+        Map<Long, TaskTimeSummary> times = timeQueries.summaries(
+                result.getContent().stream().map(Task::getId).toList(), clock.instant());
+        return PageResponse.from(result.map(
+                task -> taskMapper.toResponse(task, times.getOrDefault(task.getId(), TaskTimeSummary.NONE))));
     }
 
     /** Busca uma tarefa do usuário; se não existir ou for de outro usuário, a resposta é a mesma (404). */
     @Transactional(readOnly = true)
     public TaskResponse get(Long userId, Long id) {
-        return taskMapper.toResponse(findOwned(userId, id));
+        Task task = findOwned(userId, id);
+        return taskMapper.toResponse(task, timeQueries.summary(id, clock.instant()));
     }
 
     /**
@@ -128,7 +139,7 @@ public class TaskService {
             task.changeStatus(request.status(), now);
         }
         taskRepository.save(task);
-        return taskMapper.toResponse(task);
+        return responseAfterWrite(task);
     }
 
     /**
@@ -142,13 +153,22 @@ public class TaskService {
         stopRunningTimer(id, now);
         task.changeStatus(TaskStatus.COMPLETED, now);
         taskRepository.save(task);
-        return taskMapper.toResponse(task);
+        return responseAfterWrite(task);
     }
 
     /** Remove a tarefa, desde que seja do usuário. */
     @Transactional
     public void delete(Long userId, Long id) {
         taskRepository.delete(findOwned(userId, id));
+    }
+
+    /**
+     * Resposta depois de uma alteração. O tempo vem de SQL direto (fora do JPA), então antes é preciso o
+     * flush: sem ele a consulta ainda veria, por exemplo, a sessão que acabou de ser fechada como aberta.
+     */
+    private TaskResponse responseAfterWrite(Task task) {
+        taskRepository.flush();
+        return taskMapper.toResponse(task, timeQueries.summary(task.getId(), clock.instant()));
     }
 
     // Fecha a sessão aberta da tarefa, se houver (a entidade é gerenciada, então a alteração é gravada no commit)
