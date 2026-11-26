@@ -34,7 +34,10 @@ public class AuthService {
         this.userMapper = userMapper;
     }
 
-    /** Cria o usuário: e-mail normalizado e único (409 se já existir) e senha guardada só como hash BCrypt. */
+    /**
+     * Cria o usuário: e-mail normalizado e único (409 se já existir), senha guardada só como hash BCrypt
+     * e fuso informado (ou o padrão America/Sao_Paulo).
+     */
     @Transactional
     public UserResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
@@ -42,6 +45,9 @@ public class AuthService {
             throw emailAlreadyRegistered();
         }
         User user = new User(request.name().trim(), email, passwordEncoder.encode(request.password()));
+        if (request.timeZone() != null) {
+            user.setTimeZone(request.timeZone());
+        }
         try {
             // saveAndFlush força o INSERT agora; se duas requisições simultâneas passaram pelo
             // existsByEmail, o índice único do banco barra a segunda e ela também recebe 409

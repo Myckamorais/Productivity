@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 /** Usuário da aplicação. Cada usuário enxerga somente os próprios dados. */
@@ -40,9 +41,25 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
+    // Fuso do usuário: define onde começa e termina o "dia" no dashboard, relatórios e calendário
+    @Column(name = "time_zone", nullable = false, length = 64)
+    private String timeZone = DEFAULT_TIME_ZONE;
+
+    // Meta diária de foco, em minutos; nula quando o usuário não definiu uma
+    @Column(name = "daily_focus_goal_minutes")
+    private Integer dailyFocusGoalMinutes;
+
+    /** Fuso usado quando o usuário não informa um. */
+    public static final String DEFAULT_TIME_ZONE = "America/Sao_Paulo";
+
     public User(String name, String email, String passwordHash) {
         this.name = name;
         this.email = email;
         this.passwordHash = passwordHash;
+    }
+
+    /** O fuso do usuário como ZoneId, pronto para os cálculos de data. */
+    public ZoneId zoneId() {
+        return ZoneId.of(timeZone);
     }
 }
