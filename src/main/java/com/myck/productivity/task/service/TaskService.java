@@ -13,6 +13,7 @@ import com.myck.productivity.task.entity.TaskPriority;
 import com.myck.productivity.task.entity.TaskStatus;
 import com.myck.productivity.task.mapper.TaskMapper;
 import com.myck.productivity.task.repository.TaskRepository;
+import com.myck.productivity.task.repository.TaskSessionRepository;
 import com.myck.productivity.task.repository.TaskSpecifications;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 
 @Service
@@ -37,14 +39,17 @@ public class TaskService {
             Sort.Order.asc("id"));
 
     private final TaskRepository taskRepository;
+    private final TaskSessionRepository sessionRepository;
     private final CategoryRepository categoryRepository;
     private final GoalRepository goalRepository;
     private final TaskMapper taskMapper;
     private final Clock clock;
 
-    public TaskService(TaskRepository taskRepository, CategoryRepository categoryRepository,
-            GoalRepository goalRepository, TaskMapper taskMapper, Clock clock) {
+    public TaskService(TaskRepository taskRepository, TaskSessionRepository sessionRepository,
+            CategoryRepository categoryRepository, GoalRepository goalRepository, TaskMapper taskMapper,
+            Clock clock) {
         this.taskRepository = taskRepository;
+        this.sessionRepository = sessionRepository;
         this.categoryRepository = categoryRepository;
         this.goalRepository = goalRepository;
         this.taskMapper = taskMapper;
@@ -115,17 +120,27 @@ public class TaskService {
             task.setPriority(request.priority());
         }
         if (request.status() != null) {
-            task.changeStatus(request.status(), clock.instant());
+            Instant now = clock.instant();
+            // Concluir ou voltar para PENDING encerra o trabalho na tarefa: não pode sobrar cronômetro rodando
+            if (request.status() == TaskStatus.COMPLETED || request.status() == TaskStatus.PENDING) {
+                stopRunningTimer(id, now);
+            }
+            task.changeStatus(request.status(), now);
         }
         taskRepository.save(task);
         return taskMapper.toResponse(task);
     }
 
-    /** Marca a tarefa como concluída e registra o momento. Se já estava concluída, mantém o momento original. */
+    /**
+     * Marca a tarefa como concluída e registra o momento. Se já estava concluída, mantém o momento original.
+     * Se o cronômetro estava rodando, a sessão é fechada junto, para o tempo investido ser contabilizado.
+     */
     @Transactional
     public TaskResponse complete(Long userId, Long id) {
         Task task = findOwned(userId, id);
-        task.changeStatus(TaskStatus.COMPLETED, clock.instant());
+        Instant now = clock.instant();
+        stopRunningTimer(id, now);
+        task.changeStatus(TaskStatus.COMPLETED, now);
         taskRepository.save(task);
         return taskMapper.toResponse(task);
     }
@@ -134,6 +149,11 @@ public class TaskService {
     @Transactional
     public void delete(Long userId, Long id) {
         taskRepository.delete(findOwned(userId, id));
+    }
+
+    // Fecha a sessão aberta da tarefa, se houver (a entidade é gerenciada, então a alteração é gravada no commit)
+    private void stopRunningTimer(Long taskId, Instant now) {
+        sessionRepository.findByTaskIdAndEndedAtIsNull(taskId).ifPresent(session -> session.stop(now));
     }
 
     // A busca já filtra pelo dono: tarefa de outro usuário é tratada como inexistente
