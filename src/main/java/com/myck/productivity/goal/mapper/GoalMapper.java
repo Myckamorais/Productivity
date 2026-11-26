@@ -1,5 +1,6 @@
 package com.myck.productivity.goal.mapper;
 
+import com.myck.productivity.goal.dto.GoalProgress;
 import com.myck.productivity.goal.dto.GoalResponse;
 import com.myck.productivity.goal.entity.Goal;
 import org.springframework.stereotype.Component;
@@ -8,8 +9,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class GoalMapper {
 
-    public GoalResponse toResponse(Goal goal) {
+    public GoalResponse toResponse(Goal goal, GoalProgress progress) {
         return new GoalResponse(goal.getId(), goal.getTitle(), goal.getDescription(), goal.getDeadline(),
-                goal.getStatus(), goal.getCreatedAt());
+                goal.getStatus(), progress.totalTasks(), progress.completedTasks(), progress.percent(),
+                goal.getCreatedAt());
     }
 }

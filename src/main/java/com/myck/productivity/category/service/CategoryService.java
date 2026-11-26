@@ -7,6 +7,7 @@ import com.myck.productivity.category.mapper.CategoryMapper;
 import com.myck.productivity.category.repository.CategoryRepository;
 import com.myck.productivity.common.BusinessException;
 import com.myck.productivity.common.ResourceNotFoundException;
+import com.myck.productivity.task.repository.TaskRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,10 +19,13 @@ import java.util.List;
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
+    private final TaskRepository taskRepository;
     private final CategoryMapper categoryMapper;
 
-    public CategoryService(CategoryRepository categoryRepository, CategoryMapper categoryMapper) {
+    public CategoryService(CategoryRepository categoryRepository, TaskRepository taskRepository,
+            CategoryMapper categoryMapper) {
         this.categoryRepository = categoryRepository;
+        this.taskRepository = taskRepository;
         this.categoryMapper = categoryMapper;
     }
 
@@ -65,10 +69,23 @@ public class CategoryService {
         return categoryMapper.toResponse(category);
     }
 
-    /** Remove a categoria, desde que seja do usuário. */
+    /**
+     * Remove a categoria, desde que seja do usuário e não tenha tarefas (409 caso tenha): a categoria é
+     * obrigatória na tarefa, então apagá-la deixaria tarefas sem categoria ou as apagaria sem o usuário perceber.
+     */
     @Transactional
     public void delete(Long userId, Long id) {
-        categoryRepository.delete(findOwned(userId, id));
+        Category category = findOwned(userId, id);
+        if (taskRepository.existsByCategoryId(id)) {
+            throw categoryHasTasks();
+        }
+        try {
+            categoryRepository.delete(category);
+            // flush força o DELETE agora: se uma tarefa for criada nesse intervalo, a FK do banco recusa
+            categoryRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw categoryHasTasks();
+        }
     }
 
     // A busca já filtra pelo dono: categoria de outro usuário é tratada como inexistente
@@ -90,6 +107,11 @@ public class CategoryService {
     // Cor sempre em maiúsculas, para #ff0000 e #FF0000 serem iguais
     private static String normalizeColor(String color) {
         return color.toUpperCase();
+    }
+
+    private static BusinessException categoryHasTasks() {
+        return new BusinessException(HttpStatus.CONFLICT,
+                "Não é possível excluir a categoria: ela possui tarefas. Apague ou mude a categoria das tarefas antes.");
     }
 
     private static BusinessException nameAlreadyUsed() {
