@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 /** Categoria de tarefas (ex.: Estudos, Trabalho), com uma cor para os gráficos e telas. */
 @Entity
@@ -35,8 +36,9 @@ public class Category {
     @Column(nullable = false, length = 7)
     private String color;
 
+    // Truncado em microssegundos, a precisão do PostgreSQL: assim o valor devolvido na criação é idêntico ao das leituras seguintes
     @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
+    private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
     public Category(Long userId, String name, String color) {
         this.userId = userId;

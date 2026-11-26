@@ -14,6 +14,7 @@ import lombok.Setter;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
 /** Meta: apenas agrupa tarefas. O progresso é calculado a partir delas (Fase 3). */
 @Entity
@@ -45,8 +46,9 @@ public class Goal {
     @Column(nullable = false, length = 20)
     private GoalStatus status;
 
+    // Truncado em microssegundos, a precisão do PostgreSQL: assim o valor devolvido na criação é idêntico ao das leituras seguintes
     @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
+    private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
     public Goal(Long userId, String title, String description, LocalDate deadline, GoalStatus status) {
         this.userId = userId;
