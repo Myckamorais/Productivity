@@ -1,6 +1,8 @@
 package com.myck.productivity.common;
 
 import jakarta.servlet.http.HttpServletRequest;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.exc.MismatchedInputException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -8,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,7 +21,11 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.temporal.TemporalAccessor;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Converte qualquer exceção na resposta padrão {@link ErrorResponse}.
@@ -77,6 +84,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(body(status, "Dados inválidos.", path(request), fields));
     }
 
+    /**
+     * Corpo que não pôde ser lido. Quando o JSON é válido mas um valor não encaixa no tipo
+     * (enum inexistente, data em formato errado...), aponta o campo e o que era esperado;
+     * quando o JSON em si está quebrado ou ausente, devolve uma mensagem geral.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(HttpMessageNotReadableException ex,
+            HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        MismatchedInputException mismatch = findMismatchedInput(ex);
+        if (mismatch == null) {
+            return ResponseEntity.status(status)
+                    .body(body(status, "Corpo da requisição ausente ou JSON malformado.", path(request), null));
+        }
+        String field = fieldPath(mismatch);
+        var fieldError = new ErrorResponse.FieldError(field.isEmpty() ? "body" : field, invalidValueMessage(mismatch));
+        return ResponseEntity.status(status)
+                .body(body(status, "Dados inválidos.", path(request), List.of(fieldError)));
+    }
+
     /** Erros do Spring MVC (405, 415, JSON ilegível, rota inexistente): mantém o status e troca o corpo pelo padrão. */
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
@@ -98,6 +124,50 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         HttpStatus resolved = HttpStatus.resolve(status.value());
         String reason = resolved != null ? resolved.getReasonPhrase() : "Erro";
         return new ErrorResponse(Instant.now(), status.value(), reason, message, path, fields);
+    }
+
+    // O Jackson pode vir embrulhado em outras exceções; percorre a cadeia até achar o erro de tipo
+    private static MismatchedInputException findMismatchedInput(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof MismatchedInputException mismatch) {
+                return mismatch;
+            }
+        }
+        return null;
+    }
+
+    // Monta o caminho do campo com problema, ex.: "deadline" ou "items[0].name"
+    private static String fieldPath(MismatchedInputException mismatch) {
+        StringBuilder path = new StringBuilder();
+        for (JacksonException.Reference ref : mismatch.getPath()) {
+            if (ref.getPropertyName() != null) {
+                if (!path.isEmpty()) {
+                    path.append('.');
+                }
+                path.append(ref.getPropertyName());
+            } else if (ref.getIndex() >= 0) {
+                path.append('[').append(ref.getIndex()).append(']');
+            }
+        }
+        return path.toString();
+    }
+
+    // Explica o que era esperado, conforme o tipo do campo; mensagem própria, sem repassar a do Jackson (traz nomes de classes)
+    private static String invalidValueMessage(MismatchedInputException mismatch) {
+        Class<?> type = mismatch.getTargetType();
+        if (type != null && type.isEnum()) {
+            String accepted = Arrays.stream(type.getEnumConstants())
+                    .map(constant -> ((Enum<?>) constant).name())
+                    .collect(Collectors.joining(", "));
+            return "Valor inválido. Valores aceitos: " + accepted + ".";
+        }
+        if (type != null && LocalDate.class.equals(type)) {
+            return "Data inválida. Use o formato AAAA-MM-DD.";
+        }
+        if (type != null && TemporalAccessor.class.isAssignableFrom(type)) {
+            return "Data ou hora inválida.";
+        }
+        return "Valor inválido para este campo.";
     }
 
     private static String path(WebRequest request) {

@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
+import java.util.List;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -85,7 +88,68 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.path").value("/fake/validacao"));
+                .andExpect(jsonPath("$.message").value("Corpo da requisição ausente ou JSON malformado."))
+                .andExpect(jsonPath("$.path").value("/fake/validacao"))
+                .andExpect(jsonPath("$.fieldErrors").doesNotExist());
+    }
+
+    @Test
+    void deveRetornar400QuandoOCorpoEstaAusente() throws Exception {
+        mockMvc.perform(post("/fake/validacao").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Corpo da requisição ausente ou JSON malformado."));
+    }
+
+    @Test
+    void deveApontarOCampoEOsValoresAceitosQuandoOEnumEInvalido() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cor\": \"ROXO\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Dados inválidos."))
+                .andExpect(jsonPath("$.fieldErrors.length()").value(1))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("cor"))
+                .andExpect(jsonPath("$.fieldErrors[0].message")
+                        .value("Valor inválido. Valores aceitos: AZUL, VERDE."));
+    }
+
+    @Test
+    void deveApontarOCampoEOFormatoEsperadoQuandoADataEInvalida() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"data\": \"31/12/2026\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("data"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("Data inválida. Use o formato AAAA-MM-DD."));
+    }
+
+    @Test
+    void deveApontarOCaminhoCompletoQuandoOCampoInvalidoEstaAninhado() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itens\": [{\"cor\": \"AZUL\"}, {\"cor\": \"ROXO\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("itens[1].cor"));
+    }
+
+    @Test
+    void deveUsarMensagemGenericaDoCampoQuandoOTipoNaoTemMensagemEspecifica() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantidade\": \"muitos\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("quantidade"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("Valor inválido para este campo."));
+    }
+
+    @Test
+    void naoDeveVazarNomesDeClasseDoJacksonNaMensagem() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cor\": \"ROXO\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].message").value(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("com.myck"))));
     }
 
     @Test
@@ -127,6 +191,10 @@ class GlobalExceptionHandlerTest {
         void validacao(@Valid @RequestBody Corpo corpo) {
         }
 
+        @PostMapping("/fake/tipos")
+        void tipos(@RequestBody Tipos corpo) {
+        }
+
         @GetMapping("/fake/erro")
         void erro() {
             throw new IllegalStateException("detalhe interno que não pode vazar");
@@ -134,5 +202,16 @@ class GlobalExceptionHandlerTest {
     }
 
     record Corpo(@NotBlank(message = "O título é obrigatório.") String titulo) {
+    }
+
+    enum Cor {
+        AZUL, VERDE
+    }
+
+    record Item(Cor cor) {
+    }
+
+    /** Corpo com enum, data, número e lista aninhada, para provocar erros de tipo no JSON. */
+    record Tipos(Cor cor, LocalDate data, Integer quantidade, List<Item> itens) {
     }
 }
