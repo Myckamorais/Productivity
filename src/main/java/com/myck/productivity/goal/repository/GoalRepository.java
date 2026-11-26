@@ -13,4 +13,7 @@ public interface GoalRepository extends JpaRepository<Goal, Long> {
     List<Goal> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 
     Optional<Goal> findByIdAndUserId(Long id, Long userId);
+
+    // Confirma que a meta existe E é do usuário, sem carregá-la (usada ao vincular uma tarefa)
+    boolean existsByIdAndUserId(Long id, Long userId);
 }

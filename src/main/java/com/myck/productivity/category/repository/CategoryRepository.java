@@ -15,6 +15,9 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     Optional<Category> findByIdAndUserId(Long id, Long userId);
 
+    // Confirma que a categoria existe E é do usuário, sem carregá-la (usada ao vincular uma tarefa)
+    boolean existsByIdAndUserId(Long id, Long userId);
+
     boolean existsByUserIdAndNameIgnoreCase(Long userId, String name);
 
     // Usada na edição: o próprio registro não conta como duplicado
