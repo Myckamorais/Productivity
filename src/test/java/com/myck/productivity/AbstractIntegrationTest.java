@@ -57,6 +57,17 @@ public abstract class AbstractIntegrationTest {
         return JsonPath.read(resposta, "$.accessToken");
     }
 
+    /** Cadastra e loga um usuário com senha padrão e devolve o header Authorization pronto ("Bearer ..."). */
+    protected String novoUsuario(String nome, String email) throws Exception {
+        registrar(nome, email, "senha-segura-123");
+        return "Bearer " + logar(email, "senha-segura-123");
+    }
+
+    /** Lê um campo numérico (como o id) do corpo JSON de uma resposta. */
+    protected static long lerId(String corpoJson) {
+        return ((Number) JsonPath.read(corpoJson, "$.id")).longValue();
+    }
+
     protected static String corpoRegistro(String nome, String email, String senha) {
         return """
                 {"name": "%s", "email": "%s", "password": "%s"}""".formatted(nome, email, senha);
