@@ -7,10 +7,12 @@ import com.myck.productivity.common.ResourceNotFoundException;
 import com.myck.productivity.goal.repository.GoalRepository;
 import com.myck.productivity.task.dto.TaskResponse;
 import com.myck.productivity.task.entity.Task;
+import com.myck.productivity.task.entity.TaskSession;
 import com.myck.productivity.task.entity.TaskPriority;
 import com.myck.productivity.task.entity.TaskStatus;
 import com.myck.productivity.task.mapper.TaskMapper;
 import com.myck.productivity.task.repository.TaskRepository;
+import com.myck.productivity.task.repository.TaskSessionRepository;
 import com.myck.productivity.task.service.TaskService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,8 @@ class TaskServiceTest {
     @Mock
     private TaskRepository taskRepository;
     @Mock
+    private TaskSessionRepository sessionRepository;
+    @Mock
     private CategoryRepository categoryRepository;
     @Mock
     private GoalRepository goalRepository;
@@ -60,8 +64,61 @@ class TaskServiceTest {
     @BeforeEach
     void setUp() {
         Clock relogioFixo = Clock.fixed(AGORA, ZoneOffset.UTC);
-        taskService = new TaskService(taskRepository, categoryRepository, goalRepository, new TaskMapper(),
-                relogioFixo);
+        taskService = new TaskService(taskRepository, sessionRepository, categoryRepository, goalRepository,
+                new TaskMapper(), relogioFixo);
+    }
+
+    // ---------- interação com o cronômetro ----------
+
+    @Test
+    void deveFecharOCronometroRodandoAoConcluirATarefa() {
+        // Given: cronômetro livre rodando há 10 minutos
+        Task tarefa = TaskFactory.estudarSpring(7L, USER);
+        tarefa.changeStatus(TaskStatus.IN_PROGRESS, AGORA);
+        TaskSession rodando = TaskSessionFactory.aberta(USER, 7L, AGORA.minusSeconds(600), null);
+        when(taskRepository.findByIdAndUserId(7L, USER)).thenReturn(Optional.of(tarefa));
+        when(sessionRepository.findByTaskIdAndEndedAtIsNull(7L)).thenReturn(Optional.of(rodando));
+
+        // When
+        taskService.complete(USER, 7L);
+
+        // Then: o tempo investido é contabilizado, em vez de ficar rodando numa tarefa concluída
+        assertThat(rodando.getEndedAt()).isEqualTo(AGORA);
+        assertThat(tarefa.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+    }
+
+    @Test
+    void deveFecharOCronometroRodandoAoAtualizarParaConcluidaOuPendente() {
+        for (TaskStatus novoStatus : List.of(TaskStatus.COMPLETED, TaskStatus.PENDING)) {
+            // Given
+            Task tarefa = TaskFactory.estudarSpring(7L, USER);
+            tarefa.changeStatus(TaskStatus.IN_PROGRESS, AGORA);
+            TaskSession rodando = TaskSessionFactory.aberta(USER, 7L, AGORA.minusSeconds(60), null);
+            when(taskRepository.findByIdAndUserId(7L, USER)).thenReturn(Optional.of(tarefa));
+            when(categoryRepository.existsByIdAndUserId(10L, USER)).thenReturn(true);
+            when(sessionRepository.findByTaskIdAndEndedAtIsNull(7L)).thenReturn(Optional.of(rodando));
+
+            // When
+            taskService.update(USER, 7L, TaskFactory.requisicao("T", 10L, null, null, novoStatus, null));
+
+            // Then
+            assertThat(rodando.getEndedAt()).as("status " + novoStatus).isEqualTo(AGORA);
+        }
+    }
+
+    @Test
+    void naoDeveMexerNoCronometroAoAtualizarParaEmAndamentoOuSemStatus() {
+        // Given
+        Task tarefa = TaskFactory.estudarSpring(7L, USER);
+        when(taskRepository.findByIdAndUserId(7L, USER)).thenReturn(Optional.of(tarefa));
+        when(categoryRepository.existsByIdAndUserId(10L, USER)).thenReturn(true);
+
+        // When
+        taskService.update(USER, 7L, TaskFactory.requisicao("T", 10L, null, null, TaskStatus.IN_PROGRESS, null));
+        taskService.update(USER, 7L, TaskFactory.requisicaoMinima("T", 10L));
+
+        // Then
+        verify(sessionRepository, never()).findByTaskIdAndEndedAtIsNull(any());
     }
 
     // ---------- create ----------
