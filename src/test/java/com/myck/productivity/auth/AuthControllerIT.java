@@ -32,6 +32,29 @@ class AuthControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void deveRegistrarComOFusoInformadoPeloFront() throws Exception {
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "Ana", "email": "ana@exemplo.com", "password": "senha-segura-123",
+                                 "timeZone": "America/Manaus"}"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.timeZone").value("America/Manaus"));
+    }
+
+    @Test
+    void deveRetornar400QuandoOFusoDoCadastroEInvalido() throws Exception {
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "Ana", "email": "ana@exemplo.com", "password": "senha-segura-123",
+                                 "timeZone": "Brasil"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("timeZone"));
+        assertThat(userRepository.count()).isZero();
+    }
+
+    @Test
     void deveRetornar409QuandoEmailJaEstaCadastradoMesmoEmOutraCaixa() throws Exception {
         // Given
         registrar("Ana", "ana@exemplo.com", "senha-segura-123");

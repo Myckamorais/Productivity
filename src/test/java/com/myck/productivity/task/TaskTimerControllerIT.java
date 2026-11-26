@@ -1,5 +1,6 @@
 package com.myck.productivity.task;
 
+import com.jayway.jsonpath.JsonPath;
 import com.myck.productivity.AbstractIntegrationTest;
 import com.myck.productivity.task.entity.TaskSession;
 import com.myck.productivity.task.repository.TaskRepository;
@@ -15,6 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -643,6 +645,77 @@ class TaskTimerControllerIT extends AbstractIntegrationTest {
         userRepository.deleteAll();
 
         assertThat(sessionRepository.count()).isZero();
+    }
+
+    // ---------- tempo investido e estado do cronômetro na listagem e no detalhe da tarefa ----------
+
+    @Test
+    void deveMostrarOTempoInvestidoEOEstadoDoCronometroNaListagem() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long rodando = novaTarefa(auth, "Rodando");
+        long pausada = novaTarefa(auth, "Pausada");
+        long concluida = novaTarefa(auth, "Concluída");
+        long nunca = novaTarefa(auth, "Nunca");
+
+        // Pausada: 20 minutos e pausa
+        acao(auth, "start", pausada).andExpect(status().isOk());
+        recuarSessaoAberta(pausada, 20);
+        acao(auth, "pause", pausada).andExpect(status().isOk());
+        // Concluída: 30 minutos e finaliza
+        acao(auth, "start", concluida).andExpect(status().isOk());
+        recuarSessaoAberta(concluida, 30);
+        acao(auth, "finish", concluida).andExpect(status().isOk());
+        // Rodando: começou há 10 minutos
+        acao(auth, "start", rodando).andExpect(status().isOk());
+        recuarSessaoAberta(rodando, 10);
+
+        String lista = mockMvc.perform(get("/tasks").header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(campoDaTarefa(lista, rodando, "timerState")).isEqualTo("RUNNING");
+        assertThat((Integer) campoDaTarefa(lista, rodando, "totalSeconds")).isBetween(600, 605);
+        assertThat(campoDaTarefa(lista, pausada, "timerState")).isEqualTo("PAUSED");
+        assertThat((Integer) campoDaTarefa(lista, pausada, "totalSeconds")).isBetween(1200, 1205);
+        assertThat(campoDaTarefa(lista, concluida, "timerState")).isEqualTo("COMPLETED");
+        assertThat((Integer) campoDaTarefa(lista, concluida, "totalSeconds")).isBetween(1800, 1805);
+        assertThat(campoDaTarefa(lista, nunca, "timerState")).isEqualTo("IDLE");
+        assertThat(campoDaTarefa(lista, nunca, "totalSeconds")).isEqualTo(0);
+    }
+
+    // Um campo da tarefa com o id informado dentro da página devolvida por GET /tasks
+    private static Object campoDaTarefa(String pagina, long id, String campo) {
+        List<Object> valores = JsonPath.read(pagina, "$.content[?(@.id == %d)].%s".formatted(id, campo));
+        assertThat(valores).hasSize(1);
+        return valores.getFirst();
+    }
+
+    @Test
+    void deveBaterOTempoDaListagemComODoTimer() throws Exception {
+        // A listagem (SQL) e o /timer (Java) calculam o mesmo tempo, inclusive com o timer parado no limite
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long tarefa = novaTarefa(auth, "Estudar");
+        acaoComDuracao(auth, "start", tarefa, 15).andExpect(status().isOk());
+        recuarSessaoAberta(tarefa, 40);
+
+        timer(auth, tarefa).andExpect(jsonPath("$.totalSeconds").value(900));
+        mockMvc.perform(get("/tasks/{id}", tarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.totalSeconds").value(900))
+                .andExpect(jsonPath("$.timerState").value("PAUSED"));
+    }
+
+    @Test
+    void deveRefletirOCronometroFechadoNaRespostaDaConclusao() throws Exception {
+        // A conclusão fecha a sessão e a própria resposta já mostra o estado concluído (sem sessão "rodando")
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        long tarefa = novaTarefa(auth, "Estudar");
+        acao(auth, "start", tarefa).andExpect(status().isOk());
+        recuarSessaoAberta(tarefa, 10);
+
+        mockMvc.perform(patch("/tasks/{id}/complete", tarefa).header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timerState").value("COMPLETED"))
+                .andExpect(jsonPath("$.totalSeconds", allOf(greaterThanOrEqualTo(600), lessThanOrEqualTo(605))));
     }
 
     // ---------- autenticação e isolamento ----------

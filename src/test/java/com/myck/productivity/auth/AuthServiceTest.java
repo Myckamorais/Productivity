@@ -57,7 +57,7 @@ class AuthServiceTest {
 
         // When
         UserResponse resposta = authService.register(
-                new RegisterRequest("  Ana Souza ", "  Ana@Exemplo.COM ", "senha-segura-123"));
+                new RegisterRequest("  Ana Souza ", "  Ana@Exemplo.COM ", "senha-segura-123", null));
 
         // Then
         ArgumentCaptor<User> salvo = ArgumentCaptor.forClass(User.class);
@@ -69,12 +69,41 @@ class AuthServiceTest {
     }
 
     @Test
+    void deveCadastrarComOFusoPadraoQuandoNaoInformado() {
+        // Given
+        when(userRepository.existsByEmail("ana@exemplo.com")).thenReturn(false);
+
+        // When
+        UserResponse resposta = authService.register(new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123", null));
+
+        // Then
+        assertThat(resposta.timeZone()).isEqualTo("America/Sao_Paulo");
+        assertThat(resposta.dailyFocusGoalMinutes()).isNull();
+    }
+
+    @Test
+    void deveCadastrarComOFusoInformado() {
+        // Given
+        when(userRepository.existsByEmail("ana@exemplo.com")).thenReturn(false);
+
+        // When
+        UserResponse resposta = authService.register(
+                new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123", "Europe/Lisbon"));
+
+        // Then
+        ArgumentCaptor<User> salvo = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(salvo.capture());
+        assertThat(salvo.getValue().getTimeZone()).isEqualTo("Europe/Lisbon");
+        assertThat(resposta.timeZone()).isEqualTo("Europe/Lisbon");
+    }
+
+    @Test
     void deveRecusarCadastroQuandoEmailJaExiste() {
         // Given
         when(userRepository.existsByEmail("ana@exemplo.com")).thenReturn(true);
 
         // When / Then
-        assertThatThrownBy(() -> authService.register(new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123")))
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123", null)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT));
         verify(userRepository, never()).saveAndFlush(any());
@@ -88,7 +117,7 @@ class AuthServiceTest {
         when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("uk_users_email"));
 
         // When / Then
-        assertThatThrownBy(() -> authService.register(new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123")))
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("Ana", "ana@exemplo.com", "senha-segura-123", null)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT));
     }

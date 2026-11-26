@@ -13,7 +13,11 @@ import com.myck.productivity.task.entity.TaskStatus;
 import com.myck.productivity.task.mapper.TaskMapper;
 import com.myck.productivity.task.repository.TaskRepository;
 import com.myck.productivity.task.repository.TaskSessionRepository;
+import com.myck.productivity.task.repository.TaskTimeQueries;
+import com.myck.productivity.task.repository.TaskTimeSummary;
+import com.myck.productivity.task.dto.TimerState;
 import com.myck.productivity.task.service.TaskService;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,12 +37,16 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -55,6 +63,8 @@ class TaskServiceTest {
     @Mock
     private TaskSessionRepository sessionRepository;
     @Mock
+    private TaskTimeQueries timeQueries;
+    @Mock
     private CategoryRepository categoryRepository;
     @Mock
     private GoalRepository goalRepository;
@@ -64,8 +74,81 @@ class TaskServiceTest {
     @BeforeEach
     void setUp() {
         Clock relogioFixo = Clock.fixed(AGORA, ZoneOffset.UTC);
-        taskService = new TaskService(taskRepository, sessionRepository, categoryRepository, goalRepository,
-                new TaskMapper(), relogioFixo);
+        taskService = new TaskService(taskRepository, sessionRepository, timeQueries, categoryRepository,
+                goalRepository, new TaskMapper(), relogioFixo);
+        // Como o real: tarefa sem sessões devolve NONE (o mock sozinho devolveria null). Lenient porque nem todo teste consulta
+        lenient().when(timeQueries.summary(any(), any())).thenReturn(TaskTimeSummary.NONE);
+    }
+
+    // ---------- tempo investido e estado do cronômetro na resposta ----------
+
+    @Test
+    void deveTrazerTempoEEstadoDoCronometroDeCadaTarefaDaPaginaNumaUnicaConsulta() {
+        // Given: três tarefas na página; a 7 tem cronômetro rodando, a 8 foi pausada e a 9 nunca foi cronometrada
+        Task rodando = TaskFactory.estudarSpring(7L, USER);
+        rodando.changeStatus(TaskStatus.IN_PROGRESS, AGORA);
+        Task pausada = TaskFactory.estudarSpring(8L, USER);
+        pausada.changeStatus(TaskStatus.IN_PROGRESS, AGORA);
+        Task nunca = TaskFactory.estudarSpring(9L, USER);
+        when(taskRepository.findAll(ArgumentMatchers.<Specification<Task>>any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(rodando, pausada, nunca)));
+        when(timeQueries.summaries(List.of(7L, 8L, 9L), AGORA)).thenReturn(Map.of(
+                7L, new TaskTimeSummary(600, true),
+                8L, new TaskTimeSummary(1500, false)));
+
+        // When
+        PageResponse<TaskResponse> resposta = taskService.list(USER, null, null, null, null, null, 0, 20);
+
+        // Then
+        assertThat(resposta.content()).extracting(TaskResponse::totalSeconds).containsExactly(600L, 1500L, 0L);
+        assertThat(resposta.content()).extracting(TaskResponse::timerState)
+                .containsExactly(TimerState.RUNNING, TimerState.PAUSED, TimerState.IDLE);
+        verify(timeQueries, times(1)).summaries(any(), any());
+    }
+
+    @Test
+    void deveCriarComTempoZeroSemConsultarSessoes() {
+        // Given
+        when(categoryRepository.existsByIdAndUserId(10L, USER)).thenReturn(true);
+
+        // When
+        TaskResponse resposta = taskService.create(USER, TaskFactory.requisicaoMinima("Nova", 10L));
+
+        // Then: tarefa nova não tem sessões; não há por que consultar
+        assertThat(resposta.totalSeconds()).isZero();
+        assertThat(resposta.timerState()).isEqualTo(TimerState.IDLE);
+        verifyNoInteractions(timeQueries);
+    }
+
+    @Test
+    void deveTrazerOTempoInvestidoAoBuscarUmaTarefa() {
+        // Given
+        Task tarefa = TaskFactory.estudarSpring(7L, USER);
+        tarefa.changeStatus(TaskStatus.COMPLETED, AGORA);
+        when(taskRepository.findByIdAndUserId(7L, USER)).thenReturn(Optional.of(tarefa));
+        when(timeQueries.summary(7L, AGORA)).thenReturn(new TaskTimeSummary(3600, false));
+
+        // When
+        TaskResponse resposta = taskService.get(USER, 7L);
+
+        // Then
+        assertThat(resposta.totalSeconds()).isEqualTo(3600);
+        assertThat(resposta.timerState()).isEqualTo(TimerState.COMPLETED);
+    }
+
+    @Test
+    void deveGravarAntesDeConsultarOTempoAoConcluir() {
+        // Given: a sessão é fechada em memória; sem flush, a consulta em SQL ainda a veria aberta
+        Task tarefa = TaskFactory.estudarSpring(7L, USER);
+        when(taskRepository.findByIdAndUserId(7L, USER)).thenReturn(Optional.of(tarefa));
+
+        // When
+        taskService.complete(USER, 7L);
+
+        // Then
+        InOrder ordem = inOrder(taskRepository, timeQueries);
+        ordem.verify(taskRepository).flush();
+        ordem.verify(timeQueries).summary(7L, AGORA);
     }
 
     // ---------- interação com o cronômetro ----------

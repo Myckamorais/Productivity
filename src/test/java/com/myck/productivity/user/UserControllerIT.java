@@ -5,6 +5,7 @@ import com.myck.productivity.auth.service.JwtService;
 import com.myck.productivity.config.JwtProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,6 +31,92 @@ class UserControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.name").value("Ana Souza"))
                 .andExpect(jsonPath("$.email").value("ana@exemplo.com"))
                 .andExpect(jsonPath("$.passwordHash").doesNotExist());
+    }
+
+    // ---------- configurações: fuso e meta diária de foco ----------
+
+    @Test
+    void deveTrazerOFusoPadraoESemMetaDiariaParaUmUsuarioNovo() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+
+        mockMvc.perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.timeZone").value("America/Sao_Paulo"))
+                .andExpect(jsonPath("$.dailyFocusGoalMinutes").doesNotExist());
+    }
+
+    @Test
+    void deveAtualizarFusoEMetaDiariaERefletirNoUsersMe() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+
+        mockMvc.perform(put("/users/me/settings")
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timeZone\": \"Europe/Lisbon\", \"dailyFocusGoalMinutes\": 240}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timeZone").value("Europe/Lisbon"))
+                .andExpect(jsonPath("$.dailyFocusGoalMinutes").value(240));
+
+        mockMvc.perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, auth))
+                .andExpect(jsonPath("$.timeZone").value("Europe/Lisbon"))
+                .andExpect(jsonPath("$.dailyFocusGoalMinutes").value(240));
+    }
+
+    @Test
+    void deveRemoverAMetaDiariaQuandoElaEOmitida() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+        mockMvc.perform(put("/users/me/settings")
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timeZone\": \"America/Sao_Paulo\", \"dailyFocusGoalMinutes\": 120}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/users/me/settings")
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timeZone\": \"America/Sao_Paulo\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyFocusGoalMinutes").doesNotExist());
+    }
+
+    @Test
+    void deveRetornar400ComOCampoQuandoOFusoEInvalidoOuAusente() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+
+        mockMvc.perform(put("/users/me/settings")
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timeZone\": \"-03:00\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("timeZone"));
+
+        mockMvc.perform(put("/users/me/settings")
+                        .header(HttpHeaders.AUTHORIZATION, auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("timeZone"));
+    }
+
+    @Test
+    void deveRetornar400QuandoAMetaDiariaEstaForaDoIntervalo() throws Exception {
+        String auth = novoUsuario("Ana", "ana@exemplo.com");
+
+        for (int meta : new int[] {0, 1441}) {
+            mockMvc.perform(put("/users/me/settings")
+                            .header(HttpHeaders.AUTHORIZATION, auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"timeZone\": \"UTC\", \"dailyFocusGoalMinutes\": " + meta + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[0].field").value("dailyFocusGoalMinutes"));
+        }
+    }
+
+    @Test
+    void deveRetornar401AoAtualizarConfiguracoesSemToken() throws Exception {
+        mockMvc.perform(put("/users/me/settings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timeZone\": \"UTC\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
