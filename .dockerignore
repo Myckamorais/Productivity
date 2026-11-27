@@ -1,0 +1,22 @@
+# O Dockerfile só copia o necessário para compilar, mas isto garante que nada sensível ou pesado
+# vá parar no contexto do build (e, por engano, dentro da imagem)
+
+# Segredos locais
+.env
+.env.*
+*.env
+
+# Saída de build e arquivos de IDE/Git
+target/
+.git/
+.idea/
+.vscode/
+*.iml
+
+# Nada disto é usado para compilar
+docs/
+.claude/
+CLAUDE.md
+docker-compose.yml
+Dockerfile
+.dockerignore
