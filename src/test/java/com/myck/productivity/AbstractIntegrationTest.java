@@ -22,7 +22,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "app.jwt.secret=" + AbstractIntegrationTest.JWT_SECRET)
+@TestPropertySource(properties = {
+        "app.jwt.secret=" + AbstractIntegrationTest.JWT_SECRET,
+        // O .env local tem o token verdadeiro do bot; sem isto, os testes ligariam o polling e falariam com o
+        // Telegram de verdade (consumindo mensagens do bot em uso). O TelegramIT liga o bot com um token falso.
+        "app.telegram.token=",
+        "app.telegram.mode=webhook",
+        "app.telegram.webhook-url=",
+        "app.telegram.expiry-check-interval=PT24H"})
 public abstract class AbstractIntegrationTest {
 
     /** Segredo só dos testes (32+ caracteres); o de verdade vem do .env e nunca entra no código. */
