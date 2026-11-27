@@ -5,12 +5,16 @@ import com.myck.productivity.auth.service.JwtService;
 import com.myck.productivity.config.JwtProperties;
 import com.myck.productivity.user.UserFactory;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -81,6 +85,27 @@ class JwtServiceTest {
     @Test
     void deveRejeitarTokenVazio() {
         assertThatThrownBy(() -> jwtService.parse("")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void deveRejeitarTokenComAssinaturaValidaMasSubjectQueNaoEUmId() {
+        // Given: assinado com o segredo certo, mas o subject não é numérico (não foi emitido por esta API)
+        String token = Jwts.builder()
+                .subject("ana@exemplo.com")
+                .expiration(Date.from(Instant.now().plus(Duration.ofMinutes(5))))
+                .signWith(Keys.hmacShaKeyFor(SEGREDO.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+
+        // When / Then: vira JwtException (401), e não um NumberFormatException que daria 500
+        assertThatThrownBy(() -> jwtService.parse(token))
+                .isInstanceOf(JwtException.class)
+                .hasMessageContaining("Subject");
+    }
+
+    @Test
+    void deveRecusarSubirSemSegredo() {
+        assertThatThrownBy(() -> new JwtService(new JwtProperties(null, 60), Clock.systemUTC()))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

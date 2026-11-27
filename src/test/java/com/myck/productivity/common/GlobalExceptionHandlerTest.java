@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -161,6 +163,25 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void deveExplicarQueEsperavaDataEHoraQuandoOCampoEUmInstanteInvalido() throws Exception {
+        mockMvc.perform(post("/fake/tipos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"horario\": \"amanhã cedo\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("horario"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value("Data ou hora inválida."));
+    }
+
+    @Test
+    void deveRetornar403NoPadraoQuandoOAcessoENegado() throws Exception {
+        mockMvc.perform(get("/fake/proibido"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("Forbidden"))
+                .andExpect(jsonPath("$.message").value("Acesso negado."));
+    }
+
+    @Test
     void deveRetornar500ComMensagemGenericaSemVazarODetalheDoErro() throws Exception {
         mockMvc.perform(get("/fake/erro"))
                 .andExpect(status().isInternalServerError())
@@ -195,6 +216,11 @@ class GlobalExceptionHandlerTest {
         void tipos(@RequestBody Tipos corpo) {
         }
 
+        @GetMapping("/fake/proibido")
+        void proibido() {
+            throw new AccessDeniedException("sem permissão");
+        }
+
         @GetMapping("/fake/erro")
         void erro() {
             throw new IllegalStateException("detalhe interno que não pode vazar");
@@ -212,6 +238,6 @@ class GlobalExceptionHandlerTest {
     }
 
     /** Corpo com enum, data, número e lista aninhada, para provocar erros de tipo no JSON. */
-    record Tipos(Cor cor, LocalDate data, Integer quantidade, List<Item> itens) {
+    record Tipos(Cor cor, LocalDate data, Integer quantidade, List<Item> itens, Instant horario) {
     }
 }

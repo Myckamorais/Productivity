@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -74,6 +75,25 @@ class TelegramInfrastructureTest {
             runner.pollOnce();
 
             verify(bot).handle(atualizacao(2));
+        }
+
+        @Test
+        void deveBuscarMensagensNumaThreadPropriaMesmoQuandoRemoverOWebhookFalha() {
+            // Given: o deleteWebhook falha (ex.: rede instável na subida), mas isso não pode impedir o polling
+            var runner = new TelegramPollingRunner(client, bot, propriedades("t", "polling", null, null));
+            doThrow(new TelegramClient.TelegramException("rede")).when(client).deleteWebhook();
+            when(client.getUpdates(anyLong())).thenReturn(List.of());
+
+            // When
+            runner.start();
+            try {
+                // Then: a thread de polling já está pedindo mensagens ao Telegram
+                verify(client, timeout(2_000).atLeastOnce()).getUpdates(0);
+                assertThat(runner.isRunning()).isTrue();
+            } finally {
+                runner.stop();
+            }
+            assertThat(runner.isRunning()).isFalse();
         }
 
         @Test
@@ -168,6 +188,25 @@ class TelegramInfrastructureTest {
             assertThat(enviados).isEqualTo(1);
             verify(queries, never()).markNotified(eq(7L), any());
             verify(queries).markNotified(8, AGORA);
+        }
+
+        @Test
+        void verificacaoAgendadaDeveConsultarOsTimersQuandoOBotEstaLigado() {
+            when(queries.expiredTimersToNotify(any(), any())).thenReturn(List.of());
+
+            notifier().scheduledCheck();
+
+            verify(queries).expiredTimersToNotify(any(), any());
+        }
+
+        @Test
+        void verificacaoAgendadaNaoDeveFazerNadaComOBotDesligado() {
+            var desligado = new TimerExpiryNotifier(queries, client, propriedades("", "webhook", null, null),
+                    Clock.fixed(AGORA, ZoneOffset.UTC));
+
+            desligado.scheduledCheck();
+
+            verifyNoInteractions(queries, client);
         }
 
         @Test

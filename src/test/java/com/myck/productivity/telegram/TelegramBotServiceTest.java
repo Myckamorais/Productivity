@@ -122,6 +122,14 @@ class TelegramBotServiceTest {
     }
 
     @Test
+    void deveIgnorarMensagensEmBrancoOuSemConversa() {
+        bot.handle(mensagem("   \n  "));
+        bot.handle(new TelegramUpdate(3, new TelegramUpdate.Message(10, null, "Estudar")));
+
+        verifyNoInteractions(client, taskService, linkRepository);
+    }
+
+    @Test
     void deveIgnorarConversasEmGrupo() {
         // Em grupo, qualquer participante mexeria nas tarefas de quem vinculou
         bot.handle(new TelegramUpdate(1, new TelegramUpdate.Message(10, new TelegramUpdate.Chat(-99, "group"), "Estudar")));
@@ -171,6 +179,36 @@ class TelegramBotServiceTest {
 
         assertThat(resposta()).contains("/vincular");
         verifyNoInteractions(taskService);
+    }
+
+    @Test
+    void deveCumprimentarEEnsinarAVincularNoStartSemCodigoQuandoNaoEstaVinculado() {
+        // /start puro: o usuário achou o bot pela busca, sem passar pelo link do app
+        when(linkRepository.findByChatId(CHAT)).thenReturn(Optional.empty());
+
+        bot.handle(mensagem("/start"));
+
+        assertThat(resposta()).startsWith("Olá!").contains("/vincular");
+        verifyNoInteractions(linkService);
+    }
+
+    @Test
+    void deveCumprimentarComAAjudaNoStartSemCodigoQuandoJaEstaVinculado() {
+        vinculado(10L);
+
+        bot.handle(mensagem("/start"));
+
+        assertThat(resposta()).startsWith("Olá de novo!").contains("/hoje");
+        verifyNoInteractions(linkService);
+    }
+
+    @Test
+    void deveAvisarAoDesvincularUmChatQueNaoEstavaVinculado() {
+        when(linkService.unlinkChat(CHAT)).thenReturn(false);
+
+        bot.handle(mensagem("/desvincular"));
+
+        assertThat(resposta()).contains("não estava vinculado");
     }
 
     @Test
@@ -344,6 +382,17 @@ class TelegramBotServiceTest {
     }
 
     @Test
+    void deveExplicarQueNaoHaTarefasQuandoConcluiNumDiaSemTarefas() {
+        vinculado(10L);
+        tarefasDeHoje();
+
+        bot.handle(mensagem("/concluir 1"));
+
+        verify(taskService, never()).complete(anyLong(), anyLong());
+        assertThat(resposta()).contains("Não encontrei: 1").contains("Hoje não há tarefas planejadas");
+    }
+
+    @Test
     void naoDeveConcluirDeNovoUmaTarefaJaConcluida() {
         vinculado(10L);
         tarefasDeHoje(tarefa(1, "Estudar", TaskStatus.COMPLETED, TaskPriority.MEDIUM));
@@ -383,6 +432,22 @@ class TelegramBotServiceTest {
         bot.handle(mensagem("Estudar"));
 
         assertThat(resposta()).contains("Não consegui processar");
+    }
+
+    @Test
+    void deveResponderComErroGenericoQuandoOUsuarioDoVinculoNaoExisteMais() {
+        // Given: vínculo apontando para um usuário que sumiu (não deveria acontecer: o vínculo é apagado em cascata)
+        TelegramLink link = new TelegramLink(USER);
+        link.linkTo(CHAT, AGORA);
+        when(linkRepository.findByChatId(CHAT)).thenReturn(Optional.of(link));
+        when(userRepository.findById(USER)).thenReturn(Optional.empty());
+
+        // When
+        bot.handle(mensagem("/hoje"));
+
+        // Then
+        assertThat(resposta()).contains("Não consegui processar");
+        verifyNoInteractions(taskService);
     }
 
     @Test
