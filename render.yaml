@@ -5,8 +5,8 @@ services:
     name: myck-productivity-api
     runtime: docker
     plan: free
-    # Mesma região do banco no Neon (AWS us-east-1): cada consulta atravessa menos distância
-    region: virginia
+    # Mesma região do banco no Neon (AWS us-east-2, Ohio): cada consulta atravessa menos distância
+    region: ohio
     dockerfilePath: ./Dockerfile
     # A Render só considera o deploy pronto quando isto responde 200; se a versão nova não subir, a antiga continua no ar
     healthCheckPath: /actuator/health

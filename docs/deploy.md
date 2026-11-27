@@ -24,7 +24,7 @@
 |---|---|---|
 | API | Render, plano free, `runtime: docker` | Grátis sem cartão, builda o `Dockerfile` direto do GitHub, HTTPS pronto |
 | Banco | Neon, plano free | Postgres gratuito **sem prazo de validade** (o da Render expira em 30 dias) |
-| Região | Ambos em **US East (Virgínia)** | API e banco perto um do outro: cada consulta é rápida |
+| Região | Ambos em **US East (Ohio)** | API e banco perto um do outro: cada consulta é rápida |
 | Migrations | Flyway, na subida da API | O banco novo recebe V1…V8 sozinho no primeiro deploy |
 
 ---
@@ -43,18 +43,19 @@
 2. **Create project**
    - Nome: `myck-productivity`
    - Postgres: **17** (a mesma versão do `docker-compose.yml`)
-   - Região: **AWS US East 1 (N. Virginia)**
+   - Região: **AWS US East 2 (Ohio)**, a mesma da API na Render (`region: ohio` no `render.yaml`)
 3. No painel do projeto, **Connect** → desligar **Connection pooling** (usar a conexão **direta**)
 
    > Por quê: o Flyway usa recursos de sessão do Postgres (locks) que não funcionam bem através do pooler.
    > A própria API já tem o pool dela (Hikari, 5 conexões).
 
-4. A tela mostra algo como `postgresql://USUARIO:SENHA@ep-xxxx.us-east-1.aws.neon.tech/neondb?sslmode=require`.
+   - Sem a chave à vista: apagar o `-pooler` do host dá no mesmo (`ep-xxxx-pooler...` → `ep-xxxx...`)
+4. A tela mostra algo como `postgresql://USUARIO:SENHA@ep-xxxx.us-east-2.aws.neon.tech/neondb?sslmode=require`.
    Separe em três valores:
 
 | Variável | Valor |
 |---|---|
-| `DB_URL` | `jdbc:postgresql://ep-xxxx.us-east-1.aws.neon.tech/neondb?sslmode=require` |
+| `DB_URL` | `jdbc:postgresql://ep-xxxx.us-east-2.aws.neon.tech/neondb?sslmode=require` |
 | `DB_USER` | o `USUARIO` |
 | `DB_PASSWORD` | a `SENHA` |
 
