@@ -36,15 +36,42 @@ COPY --from=build /build/extracted/spring-boot-loader/ ./
 COPY --from=build /build/extracted/snapshot-dependencies/ ./
 COPY --from=build /build/extracted/application/ ./
 
-USER app
-
 # Perfil de produção; segredos e endereço do banco chegam como variáveis de ambiente da hospedagem
 ENV SPRING_PROFILES_ACTIVE=prod
-# Memória: o plano gratuito tem 512 MB. A JVM usa até 75% para o heap e deixa o resto para threads,
-# metaspace e o próprio sistema. Se faltar memória, encerra (a hospedagem reinicia) em vez de ficar travada
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+# Memória: o plano gratuito tem 512 MB. O heap fica em até 384 MB (75%), deixando o resto para threads,
+# metaspace e o próprio sistema. Se faltar memória, encerra (a hospedagem reinicia) em vez de ficar travada.
+# Heap e coletor são FIXOS, e não calculados pela máquina, por causa do cache AOT abaixo:
+#   -Xms128m: com 512 MB, o heap inicial padrão seria ~8 MB (1/64 da memória), pequeno demais para os
+#             objetos guardados no cache; a JVM então se recusa a subir ("archived heap objects cannot be loaded")
+#   -XX:+UseSerialGC: o coletor mais leve, adequado a 512 MB e a uma fração de CPU; fixo para o treino (na
+#             máquina do build) e a execução real usarem o mesmo coletor
+#   -XX:TieredStopAtLevel=1: só o compilador JIT rápido (C1). Com 0,1 CPU, o compilador otimizador (C2)
+#             disputa o processador com a própria subida. Custa um pouco de desempenho máximo, irrelevante
+#             para uso pessoal. Medido com 0,1 CPU e 512 MB: subida de 220 s → 156 s (cache AOT) → 92 s (+ C1)
+ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx384m -XX:+ExitOnOutOfMemoryError -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+
+# Cache AOT do Java 25 (JEPs 483/514/515): uma "execução de treino" sobe o Spring uma vez durante o build e
+# a JVM grava as classes já carregadas e ligadas e o perfil dos métodos mais usados em app.aot. Na subida
+# real, a JVM parte desse cache em vez de refazer o trabalho, o que importa muito numa CPU fraca que
+# "acorda" a API depois de dormir.
+# O treino não tem banco: spring.context.exit=onRefresh encerra logo após criar todos os beans (antes de
+# atender requisições), e Flyway/Hibernate são impedidos de conectar. Os segredos são valores falsos, usados
+# só nesta etapa do build (não ficam na imagem como variáveis de ambiente). O cache precisa ser gerado com
+# o mesmo JRE e o mesmo classpath da execução real, por isso é feito aqui, no estágio final.
+RUN java -XX:AOTCacheOutput=app.aot \
+        -Dspring.context.exit=onRefresh \
+        -Dspring.flyway.enabled=false \
+        -Dspring.jpa.hibernate.ddl-auto=none \
+        -Dspring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
+        -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
+        -DDB_PASSWORD=treino -DJWT_SECRET=segredo-falso-usado-so-no-treino-do-cache-aot \
+        -jar app.jar
+
+USER app
 
 # A Render informa a porta em PORT (a aplicação lê); 8080 é a porta padrão para rodar localmente
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Atenção: se o cache estiver incompatível (outro heap, outro coletor, outro JRE), a JVM pode se recusar a
+# subir. Por isso as opções de memória ficam fixas acima e o cache é sempre gerado no mesmo build da imagem
+ENTRYPOINT ["java", "-XX:AOTCache=app.aot", "-jar", "app.jar"]

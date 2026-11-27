@@ -33,8 +33,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @EnabledIfSystemProperty(named = "smoke.url", matches = "https?://.+")
 class AmbientePublicadoSmokeTest {
 
-    // A hospedagem gratuita "dorme" sem uso: a primeira chamada pode levar perto de 1 minuto para acordar a app
-    private static final Duration ESPERA_ACORDAR = Duration.ofSeconds(90);
+    // A hospedagem gratuita "dorme" sem uso: a primeira chamada espera a app subir de novo (~1 min com o cache
+    // AOT; a folga cobre a fila da hospedagem e subidas mais lentas)
+    private static final Duration ESPERA_ACORDAR = Duration.ofSeconds(180);
     private static final Duration ESPERA = Duration.ofSeconds(30);
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(ESPERA).build();

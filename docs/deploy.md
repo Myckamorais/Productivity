@@ -136,9 +136,9 @@ Resultado esperado: `Tests run: 5, Failures: 0`.
 
 | Limite | Efeito | Como conviver |
 |---|---|---|
-| Render **dorme após 15 min** sem chamadas | A primeira chamada depois disso leva **~1 min** | Normal no plano free; o smoke test já espera até 90 s |
+| Render **dorme após 15 min** sem chamadas | A primeira chamada depois disso espera a API subir de novo (**~1 min**) | Normal no plano free; o smoke test espera até 3 min. A imagem já usa o cache AOT do Java 25 para subir mais rápido (seção 9) |
 | Dormindo, nada roda | O **aviso de fim do timer** no Telegram não sai enquanto a API dorme | Opcional: um serviço de ping (cron-job.org, UptimeRobot) chamando `/actuator/health` a cada 10 min mantém a API acordada; as 750 h/mês do plano cobrem um serviço ligado o mês todo |
-| Render: **512 MB** de RAM | A API usa ~360 MB | A JVM está limitada a 75% da memória (`MaxRAMPercentage`) |
+| Render: **512 MB** de RAM | A API usa ~260 MB | Heap fixo entre 128 e 384 MB (`-Xms128m -Xmx384m`) |
 | Neon: **0,5 GB** de dados | Sobra para anos de uso pessoal | Acompanhar em *Usage* no painel |
 | Neon **suspende** o banco parado | A primeira consulta acorda em ~1 s | Transparente para a API |
 
@@ -161,8 +161,28 @@ Resultado esperado: `Tests run: 5, Failures: 0`.
 
 | Arquivo | Papel |
 |---|---|
-| `Dockerfile` | Build em dois estágios: JDK + Maven compilam; a imagem final tem só o JRE e o jar em camadas, roda sem root |
+| `Dockerfile` | Build em dois estágios: JDK + Maven compilam; a imagem final tem só o JRE e o jar em camadas, roda sem root e traz o cache AOT ⬇️ |
 | `.dockerignore` | Garante que `.env`, `target/` e `.git/` nunca entrem no build |
 | `render.yaml` | Serviço da Render como código (Blueprint) |
 | `application.yml` | Porta pela variável `PORT`, CORS configurável, headers do proxy HTTPS e pool de 5 conexões no perfil `prod` |
 | `AmbientePublicadoSmokeTest` | Smoke test do ambiente publicado |
+
+### Subida rápida numa CPU fraca
+
+O plano free tem só uma fração de CPU, e a primeira subida na Render levou **132 s**. Medido localmente com
+0,1 CPU e 512 MB:
+
+| Configuração | Subida | Memória |
+|---|---:|---:|
+| Original | 220 s | 361 MB |
+| + cache AOT do Java 25 | 156 s | 266 MB |
+| + só o JIT rápido (`-XX:TieredStopAtLevel=1`) | **~95 s** | **258 MB** |
+
+- **Cache AOT (JEPs 483/514/515):** no build da imagem, uma "execução de treino" sobe o Spring uma vez (sem
+  banco, saindo logo após criar os beans) e a JVM grava em `app.aot` as classes já carregadas e ligadas e o
+  perfil dos métodos. Na subida real ela parte desse cache.
+- **Cuidado aprendido na prática:** com 512 MB, o heap inicial padrão (~8 MB) é pequeno demais para o cache e
+  a JVM **não sobe** (`archived heap objects cannot be loaded`). Por isso o heap e o coletor são fixos no
+  `Dockerfile` (`-Xms128m -Xmx384m -XX:+UseSerialGC`), iguais no treino e na execução real.
+- **Só o C1:** com 0,1 CPU, o compilador otimizador (C2) disputa o processador com a subida; o C1 sozinho basta
+  para uso pessoal.
