@@ -6,7 +6,9 @@ import com.myck.productivity.auth.service.JwtService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -14,21 +16,29 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
 
 /**
  * Segurança da API: autenticação por JWT, sem sessão. Tudo é protegido por padrão;
  * só o cadastro, o login, o health e a documentação são públicos.
  */
 @Configuration
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
 public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService,
             SecurityErrorHandler securityErrorHandler) {
         http
+                // CORS antes de tudo: o preflight (OPTIONS) do navegador não leva token e precisa ser respondido
+                // aqui, e até as respostas 401 precisam dos headers CORS para o front conseguir lê-las
+                .cors(Customizer.withDefaults())
                 // API stateless consumida por token: sem sessão no servidor
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // CSRF protege sessões baseadas em cookie; com token no header, não se aplica
@@ -51,6 +61,26 @@ public class SecurityConfig {
                 // O filtro JWT roda antes do filtro de login padrão, para já chegar autenticado na autorização
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * CORS: o navegador só deixa um site em outro endereço (o front React) ler as respostas da API se ela
+     * autorizar a origem dele. Só as origens configuradas são aceitas, nunca "*": com "*", qualquer site
+     * aberto no navegador do usuário poderia chamar a API.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(CorsProperties properties) {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(properties.allowedOrigins());
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
+        // O token vai no header Authorization, não em cookie: o navegador não precisa enviar credenciais
+        config.setAllowCredentials(false);
+        // O navegador guarda a resposta do preflight por 1 hora, evitando um OPTIONS antes de cada chamada
+        config.setMaxAge(Duration.ofHours(1));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     /** BCrypt: hash com salt embutido e custo ajustável; é o padrão recomendado para senhas. */
