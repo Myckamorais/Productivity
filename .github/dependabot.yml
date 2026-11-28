@@ -1,0 +1,30 @@
+# Dependabot: abre pull requests quando sai versão nova das dependências, principalmente correções de
+# segurança. Cada PR deve passar no ./mvnw verify antes do merge (o deploy na Render só acontece no merge na main).
+version: 2
+updates:
+  # Dependências Maven (Spring Boot, driver do Postgres, jjwt, springdoc...)
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    # Correções e versões menores num PR só, para não virar uma pilha de PRs pequenos
+    groups:
+      dependencias-menores:
+        update-types: [minor, patch]
+
+  # Imagens base do Dockerfile (eclipse-temurin)
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    ignore:
+      # Trocar a versão do Java (25 → 26) é decisão de projeto, não atualização automática
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
