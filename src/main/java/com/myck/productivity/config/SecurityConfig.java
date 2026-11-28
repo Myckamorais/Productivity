@@ -1,8 +1,11 @@
 package com.myck.productivity.config;
 
+import com.myck.productivity.auth.security.AuthRateLimitFilter;
+import com.myck.productivity.auth.security.AuthRateLimiter;
 import com.myck.productivity.auth.security.JwtAuthenticationFilter;
 import com.myck.productivity.auth.security.SecurityErrorHandler;
 import com.myck.productivity.auth.service.JwtService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -29,12 +33,13 @@ import java.util.List;
  * só o cadastro, o login, o health e a documentação são públicos.
  */
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class, RateLimitProperties.class})
 public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService,
-            SecurityErrorHandler securityErrorHandler) {
+            SecurityErrorHandler securityErrorHandler, AuthRateLimiter authRateLimiter,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
         http
                 // CORS antes de tudo: o preflight (OPTIONS) do navegador não leva token e precisa ser respondido
                 // aqui, e até as respostas 401 precisam dos headers CORS para o front conseguir lê-las
@@ -59,7 +64,10 @@ public class SecurityConfig {
                         .authenticationEntryPoint(securityErrorHandler)
                         .accessDeniedHandler(securityErrorHandler))
                 // O filtro JWT roda antes do filtro de login padrão, para já chegar autenticado na autorização
-                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class)
+                // Limite de tentativas no login/cadastro antes do filtro JWT: barra o excesso antes de qualquer
+                // trabalho (corpo, banco, BCrypt)
+                .addFilterBefore(new AuthRateLimitFilter(authRateLimiter, resolver), JwtAuthenticationFilter.class);
         return http.build();
     }
 
@@ -74,6 +82,9 @@ public class SecurityConfig {
         config.setAllowedOrigins(properties.allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
+        // Por padrão o navegador esconde do JavaScript os headers fora de uma lista básica; o Retry-After (429)
+        // precisa ser liberado para o front saber quanto tempo esperar
+        config.setExposedHeaders(List.of(HttpHeaders.RETRY_AFTER));
         // O token vai no header Authorization, não em cookie: o navegador não precisa enviar credenciais
         config.setAllowCredentials(false);
         // O navegador guarda a resposta do preflight por 1 hora, evitando um OPTIONS antes de cada chamada
