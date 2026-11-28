@@ -55,6 +55,12 @@ class CorsIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void deveLiberarOHeaderRetryAfterParaOFrontLerOTempoDeEsperaDo429() throws Exception {
+        mockMvc.perform(get("/users/me").header(HttpHeaders.ORIGIN, FRONT))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, containsString("Retry-After")));
+    }
+
+    @Test
     void deveIncluirOHeaderCorsAteNo401ParaOFrontConseguirLerOErro() throws Exception {
         // Sem o header, o navegador esconde a resposta e o front não saberia que precisa mandar para o login
         mockMvc.perform(get("/users/me").header(HttpHeaders.ORIGIN, FRONT))

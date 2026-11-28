@@ -14,12 +14,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -173,6 +175,16 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void deveRetornar429ComRetryAfterQuandoHaTentativasDemais() throws Exception {
+        mockMvc.perform(get("/fake/tentativas-demais"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "900"))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.error").value("Too Many Requests"))
+                .andExpect(jsonPath("$.message").value("Muitas tentativas. Tente novamente em 15 minutos."));
+    }
+
+    @Test
     void deveRetornar403NoPadraoQuandoOAcessoENegado() throws Exception {
         mockMvc.perform(get("/fake/proibido"))
                 .andExpect(status().isForbidden())
@@ -214,6 +226,11 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/fake/tipos")
         void tipos(@RequestBody Tipos corpo) {
+        }
+
+        @GetMapping("/fake/tentativas-demais")
+        void tentativasDemais() {
+            throw new TooManyRequestsException(Duration.ofMinutes(15));
         }
 
         @GetMapping("/fake/proibido")

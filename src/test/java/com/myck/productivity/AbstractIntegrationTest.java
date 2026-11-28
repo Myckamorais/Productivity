@@ -29,7 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.telegram.token=",
         "app.telegram.mode=webhook",
         "app.telegram.webhook-url=",
-        "app.telegram.expiry-check-interval=PT24H"})
+        "app.telegram.expiry-check-interval=PT24H",
+        // Os testes cadastram e logam centenas de usuários do mesmo IP; o limite é testado à parte (RateLimitIT)
+        "app.rate-limit.enabled=false"})
 public abstract class AbstractIntegrationTest {
 
     /** Segredo só dos testes (32+ caracteres); o de verdade vem do .env e nunca entra no código. */
